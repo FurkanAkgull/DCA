@@ -1,0 +1,12 @@
+binance:
+  api_key: "423Fb02F70d0F65af4840F24CC3C9d6ez5igM7Kz5A3CBbBALOr3qbpVpLjpwel3"
+  api_secret: "AB3488BFe4660FdA37d4F802C69Bb013zwJfDSvteMTUISHdxmI8BchtOX8K7SHZ"
+  symbol: "BTCUSDT"
+  interval: "1h"
+  limit: 100
+  enable_trading: false
+
+training:
+  test_size: 0.2
+  rfc_n_estimators: 100
+  rfc_random_state: 42
