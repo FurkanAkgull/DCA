@@ -8,17 +8,15 @@ import joblib
 import yaml
 import datetime
 
-# Proje kök dizinini sys.path'e ekle ki 'analysis' ve diğer modüller bulunabilsin
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-# logs ve models klasörlerini oluştur
+
 os.makedirs(os.path.join(BASE_DIR, 'models'), exist_ok=True)
 os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
 
 def train_model():
-    # Konfigürasyonları YAML dosyasından oku
     config_path = os.path.join(BASE_DIR, 'config.yaml')
     with open(config_path) as f:
         config = yaml.safe_load(f)
@@ -33,14 +31,11 @@ def train_model():
 
     df = pd.read_csv(data_path, index_col='timestamp', parse_dates=True)
 
-    # Teknik göstergeleri ekle
     from analysis.indicators import add_indicators
     df = add_indicators(df)
 
-    # Eksik verileri kaldır
     df.dropna(inplace=True)
 
-    # Etiket: bir sonraki kapanış fiyatı şimdiki fiyattan yüksek mi?
     df['label'] = (df['close'].shift(-1) > df['close']).astype(int)
 
     df.dropna(inplace=True)
@@ -52,20 +47,16 @@ def train_model():
         X, y, test_size=test_size, shuffle=False
     )
 
-    # Modeli oluştur ve eğit
     model = RandomForestClassifier(n_estimators=n_estimators, random_state=random_state)
     model.fit(X_train, y_train)
 
-    # Test doğruluğu hesapla
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
-    print(f"Model doğruluğu (accuracy): {acc:.2f}")
+    print(f"Model Success (accuracy): {acc:.2f}")
 
-    # Eğitilen modeli dosyaya kaydet
     joblib.dump(model, model_path)
-    print(f"Model kaydedildi: {model_path}")
+    print(f"Model Saved: {model_path}")
 
-    # Log dosyasına eğitim bilgilerini yaz
     log_path = os.path.join(BASE_DIR, 'logs', 'training.log')
     with open(log_path, 'a') as f:
         f.write(f"[{datetime.datetime.now()}] Accuracy: {acc:.4f}, Estimators: {n_estimators}\n")

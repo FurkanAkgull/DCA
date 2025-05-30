@@ -12,14 +12,14 @@ from binance_api.fetcher import get_historical_data, save_data
 from ai.predictor import make_prediction
 from strategy.signal_generator import generate_signal
 
-# === AYARLAR ===
+# === Settings ===
 SYMBOL = "DOGEUSDT"
 LOG_DIR = "logs"
 LOG_ORDER_FILE = os.path.join(LOG_DIR, "dca_orders.json")
 LOG_MSG_FILE = os.path.join(LOG_DIR, "dca_log.json")
-anapara = 100  # Başlangıç sermayesi
+capital = 100  # Test COIN
 
-# === DOSYA & LOG OLUŞTUR ===
+# === Create Files & Logs ===
 os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -35,15 +35,15 @@ def log_message(msg, file):
         with open(file, "a", encoding="utf-8") as f:
             f.write(f"{datetime.datetime.utcnow().isoformat()} - {msg}\n")
     except Exception as e:
-        print(f"[LOG HATASI] {e}")
+        print(f"[LOG ERROR] {e}")
 
-# === Analiz Check ===
+# === Market Analysis ===
 
-def check_analiz():
-    prices = fetch_price_list(interval="1m", limit=1440)  # 24 saat = 1440 dakika
+def check_analysis():
+    prices = fetch_price_list(interval="1m", limit=1440)  # 24 Hours = 1440 Minutes
 
     if not prices:
-        log_message("check_analiz: Fiyat verisi alınamadı.", LOG_MSG_FILE)
+        log_message("check_analysis: Could not fetch price data.", LOG_MSG_FILE)
         return
 
     start_price = prices[0]
@@ -54,30 +54,30 @@ def check_analiz():
     volatility = (max_price - min_price) / start_price * 100
 
     if change_percent > 1:
-        trend = "Yükseliş"
+        trend = "Uptrend"
     elif change_percent < -1:
-        trend = "Düşüş"
+        trend = "Downtrend"
     else:
-        trend = "Stabil"
+        trend = "Stable"
 
     analysis = {
-        "Başlangıç Fiyatı": round(start_price, 6),
-        "Bitiş Fiyatı": round(end_price, 6),
-        "Min Fiyat": round(min_price, 6),
-        "Max Fiyat": round(max_price, 6),
-        "Değişim (%)": round(change_percent, 2),
-        "Volatilite (%)": round(volatility, 2),
+        "Start Price": round(start_price, 6),
+        "End Price": round(end_price, 6),
+        "Min Price": round(min_price, 6),
+        "Max Price": round(max_price, 6),
+        "Change (%)": round(change_percent, 2),
+        "Volatility (%)": round(volatility, 2),
         "Trend": trend
     }
 
-    print("\n📊 24 Saatlik Fiyat Analizi:")
+    print("\n📊 24-Hour Price Analysis:")
     for k, v in analysis.items():
         print(f"{k}: {v}")
 
-    log_message(f"check_analiz sonucu: {json.dumps(analysis, ensure_ascii=False)}", LOG_MSG_FILE)
+    log_message(f"check_analysis Response: {json.dumps(analysis, ensure_ascii=False)}", LOG_MSG_FILE)
     return analysis
 
-# === Binance API'den fiyatları çek ===
+# === Fetch prices from Binance API ===
 def fetch_price_list(symbol=SYMBOL, interval="1m", limit=50):
     url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": symbol, "interval": interval, "limit": limit}
@@ -85,22 +85,22 @@ def fetch_price_list(symbol=SYMBOL, interval="1m", limit=50):
         response = requests.get(url, params=params)
         response.raise_for_status()
         data = response.json()
-        return [float(kline[4]) for kline in data]  # Kapanış fiyatları
+        return [float(kline[4]) for kline in data]  # Closing prices
     except Exception as e:
-        log_message(f"[HATA] Binance API: {e}", LOG_MSG_FILE)
+        log_message(f"[Error] Binance API: {e}", LOG_MSG_FILE)
         return []
 
 def average_price(symbol=SYMBOL):
     prices = fetch_price_list(symbol)
     return round(sum(prices) / len(prices), 6) if prices else 0.0
 
-# === ALIM ===
+# === BUY ===
 def buy(symbol, price, usdt_amount, log_file):
-    global anapara
+    global capital
     quantity = usdt_amount / price
     avg = average_price(symbol)
     buy_price = round(avg * 0.99, 6)
-    anapara -= usdt_amount
+    capital -= usdt_amount
 
     order = {
         "timestamp": datetime.datetime.utcnow().isoformat(),
@@ -110,19 +110,19 @@ def buy(symbol, price, usdt_amount, log_file):
         "quantity": quantity,
         "average_price": avg,
         "buy_price": buy_price,
-        "anapara": round(anapara, 2)
+        "capital": round(capital, 2)
     }
     log_order(order, log_file)
-    print(f"[ALIM] {symbol}: {quantity:.4f} adet alındı @ {price:.4f}")
+    print(f"[BUY] {symbol}: {quantity:.4f} units bought @ {price:.4f}")
     return quantity
 
-# === SATIM ===
+# === SELL ===
 def sell(symbol, price, quantity, log_file):
-    global anapara
+    global capital
     avg = average_price(symbol)
     sell_price = round(avg * 1.01, 6)
-    gelir = price * quantity
-    anapara += gelir
+    income = price * quantity
+    capital += income
 
     order = {
         "timestamp": datetime.datetime.utcnow().isoformat(),
@@ -132,11 +132,11 @@ def sell(symbol, price, quantity, log_file):
         "quantity": quantity,
         "average_price": avg,
         "sell_price": sell_price,
-        "anapara": round(anapara, 2)
+        "capital": round(capital, 2)
     }
     log_order(order, log_file)
-    print(f"[SATIM] {symbol}: {quantity:.4f} adet satıldı @ {price:.4f}")
-    return gelir
+    print(f"[SELL] {symbol}: {quantity:.4f} units sold @ {price:.4f}")
+    return income
 
 def log_order(order, file):
     try:
@@ -149,7 +149,7 @@ def log_order(order, file):
         with open(file, "w") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
-        log_message(f"[LOG ORDER HATASI] {e}", LOG_MSG_FILE)
+        log_message(f"[LOG ORDER ERROR] {e}", LOG_MSG_FILE)
 
 def get_holdings(symbol, file):
     try:
@@ -164,46 +164,46 @@ def get_holdings(symbol, file):
         total += o["quantity"] if o["side"] == "BUY" else -o["quantity"]
     return total
 
-# === AI ANALİZİ ===
+# === AI SIGNAL ===
 def run_ai_signal():
     df = get_historical_data(SYMBOL, "1h", 100)
     save_data(df)
     prediction = make_prediction(df)
     signal = generate_signal(prediction)
-    print(f"[AI SİNYAL] {signal}")
+    print(f"[AI SIGNAL] {signal}")
     return signal
 
-# === ANA DCA function ===
+# === MAIN DCA FUNCTION ===
 def run_dca_function():
-    global anapara
+    global capital
     while True:
         signal = run_ai_signal()
-        analiz = check_analiz()
+        analysis = check_analysis()
 
-        if not analiz:
-            log_message("Analiz başarısız, tekrar deneniyor...", LOG_MSG_FILE)
+        if not analysis:
+            log_message("Analysis failed, retrying...", LOG_MSG_FILE)
             time.sleep(60)
             continue
 
         if signal == "hold":
-            log_message("Piyasa stabil. DCA beklemede.", LOG_MSG_FILE)
-            print("[AI] HOLD sinyali, işlem yapılmıyor...")
+            log_message("Market stable. DCA is on hold.", LOG_MSG_FILE)
+            print("[AI] HOLD signal, no action taken...")
             time.sleep(300)
             continue
 
-        if analiz["Trend"] == "Düşüş":
-            log_message("Trend düşüşte. İşlem yapılmadı.", LOG_MSG_FILE)
+        if analysis["Trend"] == "Downtrend":
+            log_message("Trend is down. No action taken.", LOG_MSG_FILE)
             time.sleep(300)
             continue
 
-        if analiz["Volatilite (%)"] < 3:
-            log_message("Volatilite düşük. İşlem yapılmadı.", LOG_MSG_FILE)
+        if analysis["Volatility (%)"] < 3:
+            log_message("Volatility is low. No action taken.", LOG_MSG_FILE)
             time.sleep(300)
             continue
 
         prices = fetch_price_list()
         if not prices:
-            log_message("Fiyat alınamadı.", LOG_MSG_FILE)
+            log_message("Price data unavailable.", LOG_MSG_FILE)
             time.sleep(5)
             continue
 
@@ -211,23 +211,23 @@ def run_dca_function():
         avg = average_price()
         holdings = get_holdings(SYMBOL, LOG_ORDER_FILE)
 
-        print(f"\nFiyat: {current_price:.6f} | Ortalama: {avg:.6f}")
+        print(f"\nPrice: {current_price:.6f} | Average: {avg:.6f}")
         buy_threshold = avg * 0.99
         sell_threshold = avg * 1.01
 
         if holdings > 0 and current_price >= sell_threshold and signal == "sell":
             sell(SYMBOL, current_price, holdings, LOG_ORDER_FILE)
-            log_message("SATIŞ yapıldı.", LOG_MSG_FILE)
+            log_message("SELL executed.", LOG_MSG_FILE)
 
         elif holdings == 0 and current_price <= buy_threshold and signal == "buy":
             buy(SYMBOL, current_price, 10, LOG_ORDER_FILE)
-            log_message("ALIM yapıldı.", LOG_MSG_FILE)
+            log_message("BUY executed.", LOG_MSG_FILE)
 
         else:
-            log_message("İşlem koşulları sağlanmadı.", LOG_MSG_FILE)
+            log_message("Trade conditions not met.", LOG_MSG_FILE)
 
         time.sleep(60)
 
-# === ÇALIŞTIR ===
+# === RUN ===
 if __name__ == "__main__":
     run_dca_function()
